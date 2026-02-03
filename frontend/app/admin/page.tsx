@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation'; // Import useRouter
+import axios from 'axios';
 import {
     BarChart,
     Bar,
@@ -60,10 +61,60 @@ export default function AdminDashboard() {
     const [isSidebarOpen, setSidebarOpen] = useState(true);
     const [chartData, setChartData] = useState<any[]>([]);
 
+    // Real Data State
+    const [stats, setStats] = useState({ totalScans: 0, successRate: 0, threatsDetected: 0 });
+    const [logs, setLogs] = useState<any[]>([]);
+
+    // Minting State
+    const [mintUrl, setMintUrl] = useState('');
+    const [mintingLoading, setMintingLoading] = useState(false);
+
+    const fetchData = async () => {
+        try {
+            // const token = localStorage.getItem('everseal_token');
+            // const config = { headers: { Authorization: `Bearer ${token}` } };
+            // For now, consistent with Controller (Public for easier demo or add Auth header if Guard enabled)
+
+            const statsRes = await axios.get('http://localhost:4000/verify/stats');
+            setStats(statsRes.data);
+
+            const logsRes = await axios.get('http://localhost:4000/verify/logs');
+            setLogs(logsRes.data);
+
+            const chartRes = await axios.get('http://localhost:4000/verify/chart');
+            // If backend returns empty logs (start of day), maybe we should pre-fill previous days? 
+            // The backend logic generates 7 days even if empty, so it's fine.
+            setChartData(chartRes.data);
+        } catch (error) {
+            console.error("Failed to fetch dashboard data", error);
+        }
+    };
+
     useEffect(() => {
-        // Mount-time data generation (fixes hydration mismatch for dates)
-        setChartData(generateChartData());
+        // Initial Fetch
+        fetchData();
+
+        // Polling every 2 seconds for "Real-time" effect
+        const interval = setInterval(fetchData, 2000);
+        return () => clearInterval(interval);
     }, []);
+
+    const handleMint = async () => {
+        setMintingLoading(true);
+        try {
+            // Generate a random high counter to ensure it's valid
+            const randomCounter = Math.floor(Math.random() * 1000) + 100;
+            const res = await axios.post('http://localhost:4000/verify/sign', {
+                uid: '042A5C9A1B3D80', // Demo Default Tag
+                counter: randomCounter
+            });
+            setMintUrl(res.data.url);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setMintingLoading(false);
+        }
+    };
 
     // --- Components ---
 
@@ -176,30 +227,30 @@ export default function AdminDashboard() {
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                             <KpiCard
                                 title="Total Scans"
-                                value="1,284"
+                                value={stats.totalScans.toLocaleString()}
                                 icon={Activity}
                                 colorClass="bg-blue-500"
-                                subtext="+12% from last week"
+                                subtext="Real-time data"
                             />
                             <KpiCard
                                 title="Success Rate"
-                                value="94.2%"
+                                value={`${stats.successRate}%`}
                                 icon={ShieldCheck}
                                 colorClass="bg-green-500"
-                                subtext="Stable performance"
+                                subtext="Based on verified tags"
                             />
                             <KpiCard
                                 title="Threats Detected"
-                                value="28"
+                                value={stats.threatsDetected}
                                 icon={ShieldAlert}
                                 colorClass="bg-red-500"
-                                subtext="3 Replay Attacks blocked"
+                                subtext="Invalid or Replay attempts"
                             />
                         </div>
 
                         {/* 2. Chart Section */}
                         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-100">
-                            <h2 className="text-lg font-bold text-slate-800 mb-4">Weekly Authentication Traffic</h2>
+                            <h2 className="text-lg font-bold text-slate-800 mb-4">Weekly Authentication Traffic (Simulated)</h2>
                             <div className="h-80 w-full">
                                 <ResponsiveContainer width="100%" height="100%">
                                     <BarChart data={chartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
@@ -228,11 +279,41 @@ export default function AdminDashboard() {
                             </div>
                         </div>
 
+                        {/* 2.5 Quick Actions (Minting) */}
+                        <div className="bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl shadow-lg p-6 text-white flex items-center justify-between">
+                            <div>
+                                <h2 className="text-xl font-bold">Generate Valid Test Tag</h2>
+                                <p className="text-indigo-100 text-sm mt-1">Create a fresh, signed NFC URL for testing verification.</p>
+                                {mintUrl && (
+                                    <div className="mt-4 bg-white/10 p-3 rounded-lg border border-white/20 backdrop-blur-sm">
+                                        <p className="font-mono text-xs break-all">{mintUrl}</p>
+                                        <a
+                                            href={mintUrl}
+                                            target="_blank"
+                                            className="inline-block mt-2 text-xs font-bold uppercase tracking-wider bg-white text-indigo-600 px-3 py-1 rounded hover:bg-indigo-50"
+                                        >
+                                            Open Link
+                                        </a>
+                                    </div>
+                                )}
+                            </div>
+                            <button
+                                onClick={handleMint}
+                                disabled={mintingLoading}
+                                className="bg-white text-indigo-600 font-bold py-3 px-6 rounded-lg shadow-md hover:bg-slate-50 transition-colors disabled:opacity-50"
+                            >
+                                {mintingLoading ? 'Generating...' : 'Mint New URL'}
+                            </button>
+                        </div>
+
                         {/* 3. Recent Logs Table */}
                         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
                             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-gray-50/50">
                                 <h2 className="text-lg font-bold text-slate-800">Recent Security Logs</h2>
-                                <button className="text-sm text-indigo-600 font-medium hover:text-indigo-800">View All</button>
+                                <span className="flex h-2 w-2 relative">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                </span>
                             </div>
                             <div className="overflow-x-auto">
                                 <table className="w-full text-left text-sm">
@@ -246,35 +327,33 @@ export default function AdminDashboard() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                        {MOCK_LOGS.map((log) => (
-                                            <tr key={log.id} className="hover:bg-slate-50 transition-colors">
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <StatusBadge status={log.status} />
-                                                </td>
-                                                <td className="px-6 py-4 text-slate-600">
-                                                    {format(log.timestamp, 'MMM dd, HH:mm:ss')}
-                                                </td>
-                                                <td className="px-6 py-4 text-slate-700 font-mono text-xs">
-                                                    {log.tagId}
-                                                </td>
-                                                <td className="px-6 py-4 text-slate-500">
-                                                    {log.ip}
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    {log.tx ? (
-                                                        <a
-                                                            href="#"
-                                                            className="flex items-center text-blue-500 hover:text-blue-700 font-medium text-xs group"
-                                                        >
-                                                            {log.tx}
-                                                            <ExternalLink className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
-                                                        </a>
-                                                    ) : (
-                                                        <span className="text-slate-300">-</span>
-                                                    )}
+                                        {logs.length === 0 ? (
+                                            <tr>
+                                                <td colSpan={5} className="text-center py-8 text-slate-400">
+                                                    No scans detected yet. Waiting for interaction...
                                                 </td>
                                             </tr>
-                                        ))}
+                                        ) : (
+                                            logs.map((log) => (
+                                                <tr key={log.id} className="hover:bg-slate-50 transition-colors animate-fade-in-down">
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <StatusBadge status={log.status} />
+                                                    </td>
+                                                    <td className="px-6 py-4 text-slate-600">
+                                                        {format(new Date(log.timestamp), 'MMM dd, HH:mm:ss')}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-slate-700 font-mono text-xs">
+                                                        {log.tagUid || 'N/A'}
+                                                    </td>
+                                                    <td className="px-6 py-4 text-slate-500">
+                                                        {log.ipAddress || '127.0.0.1'}
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <span className="text-slate-300">-</span>
+                                                    </td>
+                                                </tr>
+                                            ))
+                                        )}
                                     </tbody>
                                 </table>
                             </div>
